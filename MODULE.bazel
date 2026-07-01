@@ -1,0 +1,86 @@
+bazel_dep(name = "rules_multitool", version = "1.11.1")
+bazel_dep(name = "bazel_env.bzl", version = "0.7.2")
+bazel_dep(name = "bazelrc-preset.bzl", version = "1.9.2")
+
+# buildifier (Starlark formatter) is always available — the `aspect buildifier`
+# task and the format.alias in .aspect/config.axl use it regardless of lint.
+bazel_dep(name = "buildifier_prebuilt", version = "8.5.1.2")
+
+# Prebuilt aspect gazelle binary (no Go toolchain needed) — provides
+# //tools/gazelle:gazelle, the default target for `aspect gazelle`.
+bazel_dep(name = "aspect_gazelle_prebuilt", version = "0.0.20")
+
+# NB: 2.7.0's sarif_parser toolchain is missing the linux_amd64 platform key
+# (breaks lint/format on Linux CI: "key sarif_parser-linux_amd64 not found").
+# Stay on 2.6.0 until that's fixed upstream.
+bazel_dep(name = "aspect_rules_lint", version = "2.7.1")
+
+# bazel_skylib's native_binary backs //tools/lint's linter wrappers.
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "protobuf", version = "35.1")
+bazel_dep(name = "protovalidate", version = "1.2.0")
+
+# Force later resolutions of some transitives to pick up Bazel 9 fixes
+bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
+bazel_dep(name = "grpc-java", version = "1.78.0")
+bazel_dep(name = "bazel_jar_jar", version = "0.1.12")
+
+# go preset uses rules_go directly; the lint preset needs this floor too because
+# aspect_rules_lint -> rules_buf transitively pulls an ancient rules_go (0.42.0)
+# whose cgo.bzl references the removed CcInfo symbol and fails to load.
+bazel_dep(name = "rules_go", version = "0.61.1")
+bazel_dep(name = "rules_java", version = "9.6.1")
+bazel_dep(name = "rules_jvm_external", version = "7.0")
+
+###############################################################################
+# Module extensions
+###############################################################################
+
+multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
+multitool.hub(lockfile = "//tools:tools.lock.json")
+use_repo(multitool, "multitool")
+
+#########################
+# Java with Maven dependencies
+maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
+
+# In the Maven support variation, the dependencies are conveniently listed here
+# in the MODULE.bazel file.
+maven.install(
+    # Example dependency. grpc-all is a recent version so its transitives stay
+    # consistent with the protobuf/google-http-client versions pulled in here.
+    artifacts = ["io.grpc:grpc-all:1.70.0"],
+    lock_file = "//:maven_install.json",
+)
+use_repo(
+    maven,
+    "maven",
+    "unpinned_maven",
+)
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "net_sourceforge_pmd",
+    build_file_content = "\n".join([
+        """load("@rules_java//java:java_import.bzl", "java_import")""",
+        """java_import(name = "net_sourceforge_pmd", jars = glob(["*.jar"]), visibility = ["//visibility:public"])""",
+    ]),
+    integrity = "sha256-vov2j2wdZphL2WRak+Yxt4ocL0L18PhxkIL+rWdVOUA=",
+    strip_prefix = "pmd-bin-7.7.0/lib",
+    url = "https://github.com/pmd/pmd/releases/download/pmd_releases/7.7.0/pmd-dist-7.7.0-bin.zip",
+)
+
+# google-java-format (the `java` formatter for //tools/format). All-deps jar.
+# Pinned to 1.28.0: it is the last release that runs on JDK 17 (the runtime this
+# repo pins in bazel/java17.bazelrc). 1.29.0+ reference javac internals that only
+# exist on JDK 21+ and fail with NoClassDefFoundError under JDK 17.
+gjf_http_jar = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_jar")
+
+gjf_http_jar(
+    name = "google_java_format",
+    integrity = "sha256-MjQufBtGAPgN80cdpGrugBLT4URdXqG+H7cSibB8xzU=",
+    url = "https://github.com/google/google-java-format/releases/download/v1.28.0/google-java-format-1.28.0-all-deps.jar",
+)
+
+register_toolchains("//bazel/toolchains:all")

@@ -1,0 +1,39 @@
+"""BUILD definition for the formatter binary
+
+This is in its own package because it has so many loading-time symbols,
+we don't want to trigger eager fetches of these for builds that don't want to run format.
+"""
+
+load("@aspect_rules_lint//format:defs.bzl", "format_multirun")
+load("@rules_java//java:java_binary.bzl", "java_binary")
+
+# gazelle:exclude
+package(default_visibility = ["//:__subpackages__"])
+
+java_binary(
+    name = "google-java-format",
+    # google-java-format reaches into the JDK compiler internals, which are not
+    # exported to unnamed modules on JDK 16+. The all-deps jar declares these
+    # exports in its manifest, but the manifest is ignored when launched via
+    # `main_class` (rather than `-jar`), so set them explicitly here.
+    jvm_flags = [
+        "--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED",
+        "--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED",
+    ],
+    main_class = "com.google.googlejavaformat.java.Main",
+    runtime_deps = ["@google_java_format//jar"],
+)
+
+# NB: no `starlark` formatter here — Starlark is formatted by the always-on
+# `aspect buildifier` task, which only needs buildifier_prebuilt.
+format_multirun(
+    name = "format",
+    java = ":google-java-format",
+
+    # TODO: wire scala (scalafmt) — scalafmt ships per-platform native binaries
+    # that need a multitool lockfile entry; add it and a `scala = ...` arg here.
+)
